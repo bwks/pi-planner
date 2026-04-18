@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-04-18
+
+### Fixed
+- the `/plan list` popover border now uses the same `borderAccent` color as the local `/todo` popover
+
 ## [0.1.8] - 2026-04-18
 
 ### Changed

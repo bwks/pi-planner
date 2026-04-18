@@ -211,7 +211,7 @@ export default function plannerExtension(pi: ExtensionAPI) {
 			return await ctx.ui.custom<SavedPlanRecord | undefined>(
 				(tui, theme, _kb, done) => {
 					const container = new Container();
-					const border = (text: string) => theme.fg("accent", text);
+					const border = (text: string) => theme.fg("borderAccent", text);
 
 					container.addChild(new Text(theme.fg("accent", theme.bold("Saved Plans")), 1, 0));
 

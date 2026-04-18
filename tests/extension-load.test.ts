@@ -111,6 +111,7 @@ test("planner extension supports browsing saved plans in a centered overlay popo
 	assert.match(source, /anchor: "center"/);
 	assert.match(source, /listSavedPlans/);
 	assert.match(source, /buildSavedPlanSelectorLabel/);
+	assert.match(source, /theme\.fg\("borderAccent", text\)/);
 	assert.match(source, /visibleWidth/);
 	assert.match(source, /┌/);
 	assert.match(source, /│/);
