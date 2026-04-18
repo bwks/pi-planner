@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
 	buildAcceptedPlanExecutionPrompt,
+	buildAdditionalWorkPrompt,
 	buildPlanAutosavePath,
 	extractPlanSection,
 	formatSavedPlanMarkdown,
@@ -82,6 +83,20 @@ test("buildAcceptedPlanExecutionPrompt tells pi to start implementing the accept
 	assert.match(prompt, /accepted/i);
 	assert.match(prompt, /build mode/i);
 	assert.match(prompt, /implement/i);
+	assert.match(prompt, /\.pi\/plans\/20260418-091011-session-123\.md/);
+	assert.match(prompt, /Plan:\n1\. Update the extension\.\n2\. Run the test suite\./);
+});
+
+test("buildAdditionalWorkPrompt carries the saved plan path and user feedback into the next build turn", () => {
+	const prompt = buildAdditionalWorkPrompt({
+		plan: ["1. Update the extension.", "2. Run the test suite."].join("\n"),
+		savedPlanPath: ".pi/plans/20260418-091011-session-123.md",
+		feedback: "Also handle cleanup of completed plans.",
+	});
+
+	assert.match(prompt, /continue/i);
+	assert.match(prompt, /additional work/i);
+	assert.match(prompt, /Also handle cleanup of completed plans\./);
 	assert.match(prompt, /\.pi\/plans\/20260418-091011-session-123\.md/);
 	assert.match(prompt, /Plan:\n1\. Update the extension\.\n2\. Run the test suite\./);
 });

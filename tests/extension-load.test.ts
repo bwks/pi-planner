@@ -55,6 +55,19 @@ test("planner extension customizes the working message while refining a plan", a
 	assert.match(source, /setWorkingMessage\(\)/);
 });
 
+
+test("planner extension reviews completed plans and supports additional work", async () => {
+	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
+	const source = await readFile(extensionPath, "utf8");
+
+	assert.match(source, /🗑️ Delete completed plan/);
+	assert.match(source, /📁 Keep saved plan/);
+	assert.match(source, /➕ Additional work/);
+	assert.match(source, /What additional work is needed\?/);
+	assert.match(source, /buildAdditionalWorkPrompt/);
+	assert.match(source, /unlink/);
+});
+
 test("planner extension defaults to plan mode", async () => {
 	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
 	const source = await readFile(extensionPath, "utf8");

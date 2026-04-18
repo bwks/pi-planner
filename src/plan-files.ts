@@ -24,6 +24,12 @@ export type AcceptedPlanExecutionPromptOptions = {
 	savedPlanPath: string;
 };
 
+export type AdditionalWorkPromptOptions = {
+	plan: string;
+	savedPlanPath: string;
+	feedback: string;
+};
+
 export function extractTextContent(content: unknown): string {
 	if (typeof content === "string") {
 		return content;
@@ -115,6 +121,23 @@ export function buildAcceptedPlanExecutionPrompt({
 		"The plan was accepted and you are now in BUILD mode.",
 		`The accepted plan was saved to: ${savedPlanPath}`,
 		"Implement the plan now.",
+		"",
+		"Plan:",
+		plan.trim(),
+	].join("\n");
+}
+
+export function buildAdditionalWorkPrompt({
+	plan,
+	savedPlanPath,
+	feedback,
+}: AdditionalWorkPromptOptions): string {
+	return [
+		"Continue implementing the accepted plan in BUILD mode.",
+		`The accepted plan is saved at: ${savedPlanPath}`,
+		"",
+		"Additional work requested:",
+		feedback.trim(),
 		"",
 		"Plan:",
 		plan.trim(),

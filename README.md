@@ -12,6 +12,7 @@ A [pi](https://github.com/mariozechner/pi-coding-agent) package that adds a plan
 - current mode is shown in the footer status line
 - accepted plans are autosaved before switching to `BUILD`
 - accepting a plan automatically starts implementation in `BUILD` mode
+- completed saved plans can be deleted, kept, or extended with additional work after implementation finishes
 - planner mode is restored from session history
 
 ## Install
@@ -68,6 +69,11 @@ When `PLAN` mode is active:
   - `❌ Discard plan`
 - accepted plans are saved to `.pi/plans/` before switching to `BUILD`
 - accepting a plan automatically queues implementation work in `BUILD` mode
+- after the build completes, pi lets you choose:
+  - `🗑️ Delete completed plan`
+  - `📁 Keep saved plan`
+  - `➕ Additional work`
+- choosing `➕ Additional work` opens an editor so you can request more implementation while keeping the saved plan around
 - refining a plan opens an editor so you can provide specific feedback
 - refinement turns show a custom `✏️ Refining plan...` working message
 - discarding a plan keeps pi in `PLAN` mode without saving or sending follow-up prompts

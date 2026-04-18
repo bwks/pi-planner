@@ -1,8 +1,9 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { type ExtensionAPI, type ExtensionContext, withFileMutationQueue } from "@mariozechner/pi-coding-agent";
 import {
 	buildAcceptedPlanExecutionPrompt,
+	buildAdditionalWorkPrompt,
 	buildPlanAutosavePath,
 	extractPlanSection,
 	extractTextContent,
@@ -19,6 +20,9 @@ import {
 type PlannerStateEntry = {
 	mode?: PlannerMode;
 	activeToolsBeforePlanMode?: string[];
+	activeAcceptedPlanPath?: string;
+	activeAcceptedPlanText?: string;
+	cleanupReviewPending?: boolean;
 };
 
 type PlannerMessage = {
@@ -29,10 +33,16 @@ type PlannerMessage = {
 const ACCEPT_PLAN_CHOICE = "✅ Accept and switch to BUILD mode";
 const REFINE_PLAN_CHOICE = "✏️ Refine plan";
 const DISCARD_PLAN_CHOICE = "❌ Discard plan";
+const DELETE_COMPLETED_PLAN_CHOICE = "🗑️ Delete completed plan";
+const KEEP_SAVED_PLAN_CHOICE = "📁 Keep saved plan";
+const ADDITIONAL_WORK_CHOICE = "➕ Additional work";
 
 export default function plannerExtension(pi: ExtensionAPI) {
 	let plannerMode: PlannerMode = "plan";
 	let activeToolsBeforePlanMode: string[] | undefined;
+	let activeAcceptedPlanPath: string | undefined;
+	let activeAcceptedPlanText: string | undefined;
+	let cleanupReviewPending = false;
 	let isRefiningPlan = false;
 
 	pi.registerFlag("plan", {
@@ -65,7 +75,17 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		pi.appendEntry("planner-mode", {
 			mode: plannerMode,
 			activeToolsBeforePlanMode,
+			activeAcceptedPlanPath,
+			activeAcceptedPlanText,
+			cleanupReviewPending,
 		});
+	};
+
+	const clearCompletedPlanState = () => {
+		activeAcceptedPlanPath = undefined;
+		activeAcceptedPlanText = undefined;
+		cleanupReviewPending = false;
+		persistPlannerState();
 	};
 
 	const setPlannerMode = (mode: PlannerMode, ctx: ExtensionContext) => {
@@ -112,6 +132,27 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		return filePath;
 	};
 
+	const deleteSavedPlan = async (filePath: string) => {
+		await withFileMutationQueue(filePath, async () => {
+			try {
+				await unlink(filePath);
+			} catch (error) {
+				if (!isFileNotFoundError(error)) {
+					throw error;
+				}
+			}
+		});
+	};
+
+	const sendBuildFollowUp = (message: string, ctx: ExtensionContext) => {
+		if (ctx.isIdle()) {
+			pi.sendUserMessage(message);
+			return;
+		}
+
+		pi.sendUserMessage(message, { deliverAs: "followUp" });
+	};
+
 	const promptForPlanNextStep = async (plan: string, ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
 
@@ -124,17 +165,17 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		if (choice === ACCEPT_PLAN_CHOICE) {
 			try {
 				const filePath = await saveAcceptedPlan(plan, ctx);
+				activeAcceptedPlanPath = filePath;
+				activeAcceptedPlanText = plan;
+				cleanupReviewPending = true;
+
 				const implementationPrompt = buildAcceptedPlanExecutionPrompt({
 					plan,
 					savedPlanPath: filePath,
 				});
 				setPlannerMode("build", ctx);
 				ctx.ui.notify(`Accepted plan saved to ${filePath}. Starting implementation...`, "success");
-				if (ctx.isIdle()) {
-					pi.sendUserMessage(implementationPrompt);
-				} else {
-					pi.sendUserMessage(implementationPrompt, { deliverAs: "followUp" });
-				}
+				sendBuildFollowUp(implementationPrompt, ctx);
 			} catch (error) {
 				ctx.ui.notify(`Could not save the accepted plan: ${getErrorMessage(error)}`, "error");
 			}
@@ -158,9 +199,58 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		}
 	};
 
+	const promptForCompletedPlanNextStep = async (ctx: ExtensionContext) => {
+		if (!ctx.hasUI || !cleanupReviewPending || !activeAcceptedPlanPath) return;
+
+		const choice = await ctx.ui.select("Completed plan — what next?", [
+			DELETE_COMPLETED_PLAN_CHOICE,
+			KEEP_SAVED_PLAN_CHOICE,
+			ADDITIONAL_WORK_CHOICE,
+		]);
+
+		if (choice === DELETE_COMPLETED_PLAN_CHOICE) {
+			try {
+				const filePath = activeAcceptedPlanPath;
+				await deleteSavedPlan(filePath);
+				clearCompletedPlanState();
+				ctx.ui.notify(`Deleted completed plan ${filePath}`, "success");
+			} catch (error) {
+				ctx.ui.notify(`Could not delete completed plan: ${getErrorMessage(error)}`, "error");
+			}
+			return;
+		}
+
+		if (choice === KEEP_SAVED_PLAN_CHOICE) {
+			const filePath = activeAcceptedPlanPath;
+			clearCompletedPlanState();
+			ctx.ui.notify(`Kept saved plan ${filePath}`, "info");
+			return;
+		}
+
+		if (choice === ADDITIONAL_WORK_CHOICE) {
+			const feedback = await ctx.ui.editor("What additional work is needed?", "");
+			if (!feedback?.trim()) {
+				ctx.ui.notify("Additional work feedback is required.", "warning");
+				return;
+			}
+
+			const prompt = buildAdditionalWorkPrompt({
+				plan: activeAcceptedPlanText ?? "",
+				savedPlanPath: activeAcceptedPlanPath,
+				feedback: feedback.trim(),
+			});
+			cleanupReviewPending = true;
+			persistPlannerState();
+			sendBuildFollowUp(prompt, ctx);
+		}
+	};
+
 	const restorePlannerMode = (ctx: ExtensionContext) => {
 		plannerMode = "plan";
 		activeToolsBeforePlanMode = undefined;
+		activeAcceptedPlanPath = undefined;
+		activeAcceptedPlanText = undefined;
+		cleanupReviewPending = false;
 
 		for (const entry of ctx.sessionManager.getBranch()) {
 			if (entry.type !== "custom" || entry.customType !== "planner-mode") continue;
@@ -168,6 +258,15 @@ export default function plannerExtension(pi: ExtensionAPI) {
 			if (data?.mode) plannerMode = data.mode;
 			if (Array.isArray(data?.activeToolsBeforePlanMode)) {
 				activeToolsBeforePlanMode = data.activeToolsBeforePlanMode;
+			}
+			if (typeof data?.activeAcceptedPlanPath === "string") {
+				activeAcceptedPlanPath = data.activeAcceptedPlanPath;
+			}
+			if (typeof data?.activeAcceptedPlanText === "string") {
+				activeAcceptedPlanText = data.activeAcceptedPlanText;
+			}
+			if (typeof data?.cleanupReviewPending === "boolean") {
+				cleanupReviewPending = data.cleanupReviewPending;
 			}
 		}
 
@@ -232,6 +331,11 @@ export default function plannerExtension(pi: ExtensionAPI) {
 			isRefiningPlan = false;
 		}
 
+		if (plannerMode === "build") {
+			await promptForCompletedPlanNextStep(ctx);
+			return;
+		}
+
 		if (plannerMode !== "plan" || !ctx.hasUI) return;
 
 		const plan = getLatestPlanFromMessages(event.messages as PlannerMessage[]);
@@ -286,4 +390,8 @@ function getErrorMessage(error: unknown): string {
 	}
 
 	return "Unknown error";
+}
+
+function isFileNotFoundError(error: unknown): boolean {
+	return !!error && typeof error === "object" && "code" in error && error.code === "ENOENT";
 }

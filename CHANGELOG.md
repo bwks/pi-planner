@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-04-18
+
+### Added
+- completed plan review in `BUILD` mode now offers `🗑️ Delete completed plan`, `📁 Keep saved plan`, and `➕ Additional work`
+
+### Changed
+- accepted plans now remain tracked after implementation so users can delete the saved plan or request additional work
+
 ## [0.1.5] - 2026-04-18
 
 ### Changed
