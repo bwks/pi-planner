@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- README now documents installing the package directly from GitHub with `pi install git:github.com/bwks/pi-planner`
+- README now documents one-run loading from GitHub with `pi -e git:github.com/bwks/pi-planner`
+
 ## [0.1.1] - 2026-04-18
 
 ### Changed

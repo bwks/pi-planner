@@ -13,13 +13,25 @@ A [pi](https://github.com/mariozechner/pi-coding-agent) package that adds a plan
 
 ## Install
 
-From this repo while developing:
+Install from GitHub:
+
+```bash
+pi install git:github.com/bwks/pi-planner
+```
+
+Install into the current project while developing from this repo:
 
 ```bash
 pi install -l .
 ```
 
-Or load it for one run only:
+Load it for one run only from GitHub:
+
+```bash
+pi -e git:github.com/bwks/pi-planner
+```
+
+Or load this local repo for one run only:
 
 ```bash
 pi -e .
