@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-04-18
+
+### Changed
+- refinement turns now show a custom `✏️ Refining plan...` working message instead of the default spinner text
+
 ## [0.1.4] - 2026-04-18
 
 ### Added

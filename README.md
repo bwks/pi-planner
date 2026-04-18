@@ -69,6 +69,7 @@ When `PLAN` mode is active:
 - accepted plans are saved to `.pi/plans/` before switching to `BUILD`
 - accepting a plan automatically queues implementation work in `BUILD` mode
 - refining a plan opens an editor so you can provide specific feedback
+- refinement turns show a custom `✏️ Refining plan...` working message
 - discarding a plan keeps pi in `PLAN` mode without saving or sending follow-up prompts
 
 Read-only tools allowed in `PLAN` mode:

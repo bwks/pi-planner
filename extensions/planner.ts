@@ -33,6 +33,7 @@ const DISCARD_PLAN_CHOICE = "❌ Discard plan";
 export default function plannerExtension(pi: ExtensionAPI) {
 	let plannerMode: PlannerMode = "plan";
 	let activeToolsBeforePlanMode: string[] | undefined;
+	let isRefiningPlan = false;
 
 	pi.registerFlag("plan", {
 		description: "Start in plan mode",
@@ -147,6 +148,7 @@ export default function plannerExtension(pi: ExtensionAPI) {
 				return;
 			}
 
+			isRefiningPlan = true;
 			pi.sendUserMessage(buildPlanRefinementPrompt(plan, feedback.trim()));
 			return;
 		}
@@ -185,6 +187,11 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		restorePlannerMode(ctx);
 	});
 
+	pi.on("agent_start", async (_event, ctx) => {
+		if (!ctx.hasUI || !isRefiningPlan) return;
+		ctx.ui.setWorkingMessage("✏️ Refining plan...");
+	});
+
 	pi.on("before_agent_start", async (event) => {
 		if (plannerMode !== "plan") return;
 
@@ -220,6 +227,11 @@ export default function plannerExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_end", async (event, ctx) => {
+		if (ctx.hasUI && isRefiningPlan) {
+			ctx.ui.setWorkingMessage();
+			isRefiningPlan = false;
+		}
+
 		if (plannerMode !== "plan" || !ctx.hasUI) return;
 
 		const plan = getLatestPlanFromMessages(event.messages as PlannerMessage[]);

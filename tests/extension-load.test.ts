@@ -46,6 +46,15 @@ test("planner extension starts implementation after a plan is accepted", async (
 	assert.match(source, /pi\.sendUserMessage\(/);
 });
 
+
+test("planner extension customizes the working message while refining a plan", async () => {
+	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
+	const source = await readFile(extensionPath, "utf8");
+
+	assert.match(source, /setWorkingMessage\("✏️ Refining plan\.\.\."\)/);
+	assert.match(source, /setWorkingMessage\(\)/);
+});
+
 test("planner extension defaults to plan mode", async () => {
 	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
 	const source = await readFile(extensionPath, "utf8");
