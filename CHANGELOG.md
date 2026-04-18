@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-04-18
+
+### Added
+- plan review UI now offers `❌ Discard plan` to dismiss a generated plan and stay in `PLAN` mode
+
+### Changed
+- accepting a plan now switches to `BUILD` mode and immediately starts implementation
+- plan review menu labels now use emojis for accept (`✅`) and refine (`✏️`) actions
+
 ## [0.1.3] - 2026-04-18
 
 ### Added

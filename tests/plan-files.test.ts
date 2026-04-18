@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { buildPlanAutosavePath, extractPlanSection, formatSavedPlanMarkdown } from "../src/plan-files";
+import {
+	buildAcceptedPlanExecutionPrompt,
+	buildPlanAutosavePath,
+	extractPlanSection,
+	formatSavedPlanMarkdown,
+} from "../src/plan-files";
 
 test("extractPlanSection returns the numbered Plan block without trailing sections", () => {
 	const text = [
@@ -66,4 +71,17 @@ test("buildPlanAutosavePath falls back to the session id when the session name i
 	});
 
 	assert.equal(filePath, path.join("/repo", ".pi", "plans", "20260418-091011-session-123.md"));
+});
+
+test("buildAcceptedPlanExecutionPrompt tells pi to start implementing the accepted plan", () => {
+	const prompt = buildAcceptedPlanExecutionPrompt({
+		plan: ["1. Update the extension.", "2. Run the test suite."].join("\n"),
+		savedPlanPath: ".pi/plans/20260418-091011-session-123.md",
+	});
+
+	assert.match(prompt, /accepted/i);
+	assert.match(prompt, /build mode/i);
+	assert.match(prompt, /implement/i);
+	assert.match(prompt, /\.pi\/plans\/20260418-091011-session-123\.md/);
+	assert.match(prompt, /Plan:\n1\. Update the extension\.\n2\. Run the test suite\./);
 });

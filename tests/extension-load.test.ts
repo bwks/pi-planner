@@ -23,14 +23,27 @@ test("planner extension registers /plan and /build commands", async () => {
 });
 
 
-test("planner extension prompts users to accept or refine detected plans", async () => {
+test("planner extension prompts users to accept, refine, or discard detected plans", async () => {
 	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
 	const source = await readFile(extensionPath, "utf8");
 
-	assert.match(source, /Accept and switch to BUILD mode/);
-	assert.match(source, /Refine plan/);
+	assert.match(source, /✅ Accept and switch to BUILD mode/);
+	assert.match(source, /✏️ Refine plan/);
+	assert.match(source, /❌ Discard plan/);
+	assert.match(source, /Plan discarded\./);
 	assert.match(source, /How should the plan be refined\?/);
 	assert.match(source, /withFileMutationQueue/);
+});
+
+
+test("planner extension starts implementation after a plan is accepted", async () => {
+	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
+	const source = await readFile(extensionPath, "utf8");
+
+	assert.match(source, /buildAcceptedPlanExecutionPrompt/);
+	assert.match(source, /ctx\.isIdle\(\)/);
+	assert.match(source, /deliverAs: "followUp"/);
+	assert.match(source, /pi\.sendUserMessage\(/);
 });
 
 test("planner extension defaults to plan mode", async () => {

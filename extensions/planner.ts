@@ -1,7 +1,13 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { type ExtensionAPI, type ExtensionContext, withFileMutationQueue } from "@mariozechner/pi-coding-agent";
-import { buildPlanAutosavePath, extractPlanSection, extractTextContent, formatSavedPlanMarkdown } from "../src/plan-files";
+import {
+	buildAcceptedPlanExecutionPrompt,
+	buildPlanAutosavePath,
+	extractPlanSection,
+	extractTextContent,
+	formatSavedPlanMarkdown,
+} from "../src/plan-files";
 import {
 	getModeSwitchMessage,
 	PLAN_MODE_TOOL_NAMES,
@@ -20,8 +26,9 @@ type PlannerMessage = {
 	content?: unknown;
 };
 
-const ACCEPT_PLAN_CHOICE = "Accept and switch to BUILD mode";
-const REFINE_PLAN_CHOICE = "Refine plan";
+const ACCEPT_PLAN_CHOICE = "✅ Accept and switch to BUILD mode";
+const REFINE_PLAN_CHOICE = "✏️ Refine plan";
+const DISCARD_PLAN_CHOICE = "❌ Discard plan";
 
 export default function plannerExtension(pi: ExtensionAPI) {
 	let plannerMode: PlannerMode = "plan";
@@ -107,13 +114,26 @@ export default function plannerExtension(pi: ExtensionAPI) {
 	const promptForPlanNextStep = async (plan: string, ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
 
-		const choice = await ctx.ui.select("Plan ready — what next?", [ACCEPT_PLAN_CHOICE, REFINE_PLAN_CHOICE]);
+		const choice = await ctx.ui.select("Plan ready — what next?", [
+			ACCEPT_PLAN_CHOICE,
+			REFINE_PLAN_CHOICE,
+			DISCARD_PLAN_CHOICE,
+		]);
 
 		if (choice === ACCEPT_PLAN_CHOICE) {
 			try {
 				const filePath = await saveAcceptedPlan(plan, ctx);
+				const implementationPrompt = buildAcceptedPlanExecutionPrompt({
+					plan,
+					savedPlanPath: filePath,
+				});
 				setPlannerMode("build", ctx);
-				ctx.ui.notify(`Accepted plan saved to ${filePath}`, "success");
+				ctx.ui.notify(`Accepted plan saved to ${filePath}. Starting implementation...`, "success");
+				if (ctx.isIdle()) {
+					pi.sendUserMessage(implementationPrompt);
+				} else {
+					pi.sendUserMessage(implementationPrompt, { deliverAs: "followUp" });
+				}
 			} catch (error) {
 				ctx.ui.notify(`Could not save the accepted plan: ${getErrorMessage(error)}`, "error");
 			}
@@ -128,6 +148,11 @@ export default function plannerExtension(pi: ExtensionAPI) {
 			}
 
 			pi.sendUserMessage(buildPlanRefinementPrompt(plan, feedback.trim()));
+			return;
+		}
+
+		if (choice === DISCARD_PLAN_CHOICE) {
+			ctx.ui.notify("Plan discarded.", "info");
 		}
 	};
 

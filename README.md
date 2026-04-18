@@ -11,6 +11,7 @@ A [pi](https://github.com/mariozechner/pi-coding-agent) package that adds a plan
 - the active toolset is reduced to read-only tools
 - current mode is shown in the footer status line
 - accepted plans are autosaved before switching to `BUILD`
+- accepting a plan automatically starts implementation in `BUILD` mode
 - planner mode is restored from session history
 
 ## Install
@@ -62,10 +63,13 @@ When `PLAN` mode is active:
 - user `!` and `!!` shell commands are blocked
 - pi is instructed to analyze, inspect, and plan instead of making changes
 - when pi returns a structured `Plan:` section, you can choose:
-  - `Accept and switch to BUILD mode`
-  - `Refine plan`
+  - `✅ Accept and switch to BUILD mode`
+  - `✏️ Refine plan`
+  - `❌ Discard plan`
 - accepted plans are saved to `.pi/plans/` before switching to `BUILD`
+- accepting a plan automatically queues implementation work in `BUILD` mode
 - refining a plan opens an editor so you can provide specific feedback
+- discarding a plan keeps pi in `PLAN` mode without saving or sending follow-up prompts
 
 Read-only tools allowed in `PLAN` mode:
 

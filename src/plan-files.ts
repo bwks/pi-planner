@@ -19,6 +19,11 @@ export type PlanAutosavePathOptions = {
 	sessionName?: string;
 };
 
+export type AcceptedPlanExecutionPromptOptions = {
+	plan: string;
+	savedPlanPath: string;
+};
+
 export function extractTextContent(content: unknown): string {
 	if (typeof content === "string") {
 		return content;
@@ -100,6 +105,20 @@ export function buildPlanAutosavePath({ cwd, savedAt, sessionId, sessionName }: 
 	const sessionLabel = getSessionLabel(sessionName, sessionId);
 	const slug = slugify(sessionLabel) || slugify(sessionId) || "plan";
 	return path.join(cwd, ".pi", "plans", `${formatTimestampForFilename(savedAt)}-${slug}.md`);
+}
+
+export function buildAcceptedPlanExecutionPrompt({
+	plan,
+	savedPlanPath,
+}: AcceptedPlanExecutionPromptOptions): string {
+	return [
+		"The plan was accepted and you are now in BUILD mode.",
+		`The accepted plan was saved to: ${savedPlanPath}`,
+		"Implement the plan now.",
+		"",
+		"Plan:",
+		plan.trim(),
+	].join("\n");
 }
 
 function findNextNonEmptyLine(lines: string[], startIndex: number): string | undefined {
