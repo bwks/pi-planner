@@ -1,7 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import {
 	getModeSwitchMessage,
-	parsePlannerMode,
 	PLAN_MODE_TOOL_NAMES,
 	renderPlannerStatus,
 	shouldAllowToolInPlanMode,
@@ -104,7 +103,7 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		return {
 			systemPrompt:
 				event.systemPrompt +
-				"\n\nPlanner mode guidance:\n- You are currently in PLAN mode.\n- Focus on analysis, exploration, and producing a plan.\n- Do not attempt to modify files, run shell commands, or use non-read-only tools.\n- If the user wants implementation work, tell them to switch back to BUILD mode with /mode build.\n- The only allowed tools in PLAN mode are: " +
+				"\n\nPlanner mode guidance:\n- You are currently in PLAN mode.\n- Focus on analysis, exploration, and producing a plan.\n- Do not attempt to modify files, run shell commands, or use non-read-only tools.\n- If the user wants implementation work, tell them to switch back to BUILD mode with /build.\n- The only allowed tools in PLAN mode are: " +
 				PLAN_MODE_TOOL_NAMES.join(", ") +
 				".",
 		};
@@ -116,7 +115,7 @@ export default function plannerExtension(pi: ExtensionAPI) {
 
 		return {
 			block: true,
-			reason: `Planner mode is active. ${event.toolName} is blocked until you switch back to BUILD mode with /mode build.`,
+			reason: `Planner mode is active. ${event.toolName} is blocked until you switch back to BUILD mode with /build.`,
 		};
 	});
 
@@ -124,7 +123,7 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		if (plannerMode !== "plan") return;
 		return {
 			result: {
-				output: "Planner mode is active. User shell commands are blocked until you switch back to BUILD mode with /mode build.",
+				output: "Planner mode is active. User shell commands are blocked until you switch back to BUILD mode with /build.",
 				exitCode: 1,
 				cancelled: false,
 				truncated: false,
@@ -132,16 +131,17 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		};
 	});
 
-	pi.registerCommand("mode", {
-		description: "Switch between plan and build modes: /mode [plan|build]",
-		handler: async (args, ctx) => {
-			const mode = parsePlannerMode(args);
-			if (!mode) {
-				if (ctx.hasUI) ctx.ui.notify("Usage: /mode [plan|build]", "warning");
-				else console.log("Usage: /mode [plan|build]");
-				return;
-			}
-			setPlannerMode(mode, ctx);
+	pi.registerCommand("plan", {
+		description: "Switch to plan mode",
+		handler: async (_args, ctx) => {
+			setPlannerMode("plan", ctx);
+		},
+	});
+
+	pi.registerCommand("build", {
+		description: "Switch to build mode",
+		handler: async (_args, ctx) => {
+			setPlannerMode("build", ctx);
 		},
 	});
 }

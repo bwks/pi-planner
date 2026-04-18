@@ -4,8 +4,8 @@ A [pi](https://github.com/mariozechner/pi-coding-agent) package that adds a plan
 
 ## Features
 
-- `/mode plan` switches pi into planning mode
-- `/mode build` switches pi back into implementation mode
+- `/plan` switches pi into planning mode
+- `/build` switches pi back into implementation mode
 - in `PLAN` mode, mutating system actions are blocked
 - the active toolset is reduced to read-only tools
 - current mode is shown in the footer status line
@@ -36,8 +36,8 @@ After installing, reload pi if needed:
 Switch modes with:
 
 ```text
-/mode plan
-/mode build
+/plan
+/build
 ```
 
 When `PLAN` mode is active:
@@ -52,10 +52,6 @@ Read-only tools allowed in `PLAN` mode:
 - `grep`
 - `find`
 - `ls`
-
-## Notes
-
-For compatibility, `/mode act` is also accepted and treated the same as `/mode build`.
 
 ## Development
 

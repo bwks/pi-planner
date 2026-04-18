@@ -12,3 +12,12 @@ test("planner extension source parses as valid TypeScript", async () => {
 		await transform(source, { loader: "ts", format: "esm" });
 	});
 });
+
+test("planner extension registers /plan and /build commands", async () => {
+	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
+	const source = await readFile(extensionPath, "utf8");
+
+	assert.match(source, /registerCommand\("plan"/);
+	assert.match(source, /registerCommand\("build"/);
+	assert.doesNotMatch(source, /registerCommand\("mode"/);
+});
