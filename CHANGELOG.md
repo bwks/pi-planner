@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-04-18
+
+### Added
+- `💾 Save plan for later` in the plan action menu to store a generated plan without switching to `BUILD`
+- `/plan list` centered popover for browsing and selecting saved plans from earlier sessions
+- saved-plan parsing and listing helpers for loading `.pi/plans/*.md` newest-first
+
+### Changed
+- saving a plan for later now ends the current planning interaction while keeping pi in `PLAN` mode
+
+### Fixed
+- required plan action dialogs no longer dismiss on `Escape`; they now require an explicit selection
+- required plan action dialogs now show `User input...` instead of the default `Working...` spinner text while waiting for a selection
+
 ## [0.1.6] - 2026-04-18
 
 ### Added

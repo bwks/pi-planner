@@ -1,3 +1,4 @@
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 const PLAN_HEADER_PATTERN = /^\s*(?:\*\*|__)?Plan:(?:\*\*|__)?\s*$/i;
@@ -28,6 +29,17 @@ export type AdditionalWorkPromptOptions = {
 	plan: string;
 	savedPlanPath: string;
 	feedback: string;
+};
+
+export type ParsedSavedPlan = {
+	savedAt?: string;
+	sessionLabel?: string;
+	sessionId?: string;
+	plan: string;
+};
+
+export type SavedPlanRecord = ParsedSavedPlan & {
+	filePath: string;
 };
 
 export function extractTextContent(content: unknown): string {
@@ -144,6 +156,78 @@ export function buildAdditionalWorkPrompt({
 	].join("\n");
 }
 
+export function parseSavedPlanMarkdown(markdown: string): ParsedSavedPlan | undefined {
+	const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+	const planHeaderIndex = lines.findIndex((line) => line.trim() === "## Plan");
+	if (planHeaderIndex === -1) return undefined;
+
+	let savedAt: string | undefined;
+	let sessionLabel: string | undefined;
+	let sessionId: string | undefined;
+
+	for (let i = 0; i < planHeaderIndex; i += 1) {
+		const line = lines[i].trim();
+		if (line.startsWith("- Saved: ")) {
+			savedAt = line.slice("- Saved: ".length).trim();
+		}
+		if (line.startsWith("- Session: ")) {
+			sessionLabel = line.slice("- Session: ".length).trim();
+		}
+		if (line.startsWith("- Session ID: ")) {
+			sessionId = line.slice("- Session ID: ".length).trim();
+		}
+	}
+
+	const plan = trimEmptyLines(lines.slice(planHeaderIndex + 1)).join("\n");
+	if (!plan) return undefined;
+
+	return {
+		savedAt,
+		sessionLabel,
+		sessionId,
+		plan,
+	};
+}
+
+export function buildSavedPlanSelectorLabel(savedPlan: ParsedSavedPlan): string {
+	const session = savedPlan.sessionLabel?.trim() || savedPlan.sessionId?.trim() || "Unknown session";
+	const savedAt = savedPlan.savedAt?.trim();
+	return savedAt ? `${session} — ${savedAt}` : session;
+}
+
+export async function listSavedPlans(cwd: string): Promise<SavedPlanRecord[]> {
+	const plansDir = path.join(cwd, ".pi", "plans");
+
+	let entries;
+	try {
+		entries = await readdir(plansDir, { withFileTypes: true });
+	} catch (error) {
+		if (isFileNotFoundError(error)) {
+			return [];
+		}
+		throw error;
+	}
+
+	const files = entries
+		.filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+		.map((entry) => entry.name)
+		.sort((a, b) => b.localeCompare(a));
+
+	const savedPlans: SavedPlanRecord[] = [];
+	for (const fileName of files) {
+		const filePath = path.join(plansDir, fileName);
+		const markdown = await readFile(filePath, "utf8");
+		const parsed = parseSavedPlanMarkdown(markdown);
+		if (!parsed) continue;
+		savedPlans.push({
+			filePath,
+			...parsed,
+		});
+	}
+
+	return savedPlans;
+}
+
 function findNextNonEmptyLine(lines: string[], startIndex: number): string | undefined {
 	for (let i = startIndex; i < lines.length; i += 1) {
 		const trimmed = lines[i].trim();
@@ -212,4 +296,8 @@ function formatTimestampForFilename(date: Date): string {
 
 function pad(value: number): string {
 	return String(value).padStart(2, "0");
+}
+
+function isFileNotFoundError(error: unknown): boolean {
+	return !!error && typeof error === "object" && "code" in error && error.code === "ENOENT";
 }

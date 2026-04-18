@@ -10,8 +10,10 @@ A [pi](https://github.com/mariozechner/pi-coding-agent) package that adds a plan
 - in `PLAN` mode, mutating system actions are blocked
 - the active toolset is reduced to read-only tools
 - current mode is shown in the footer status line
+- plans can be saved for later from the plan action menu
 - accepted plans are autosaved before switching to `BUILD`
 - accepting a plan automatically starts implementation in `BUILD` mode
+- `/plan list` opens a centered popover for browsing saved plans from earlier sessions
 - completed saved plans can be deleted, kept, or extended with additional work after implementation finishes
 - planner mode is restored from session history
 
@@ -55,6 +57,7 @@ Switch modes with:
 
 ```text
 /plan
+/plan list
 /build
 ```
 
@@ -65,14 +68,19 @@ When `PLAN` mode is active:
 - pi is instructed to analyze, inspect, and plan instead of making changes
 - when pi returns a structured `Plan:` section, you can choose:
   - `✅ Accept and switch to BUILD mode`
+  - `💾 Save plan for later`
   - `✏️ Refine plan`
   - `❌ Discard plan`
+- required plan action dialogs ignore `Escape`, require an explicit selection, and show `User input...` while waiting for your choice
+- choosing `💾 Save plan for later` stores the plan in `.pi/plans/`, ends the current planning interaction, and keeps pi in `PLAN` mode
+- `/plan list` opens a centered popover so you can pick a saved plan from an earlier session and continue from it later
 - accepted plans are saved to `.pi/plans/` before switching to `BUILD`
 - accepting a plan automatically queues implementation work in `BUILD` mode
 - after the build completes, pi lets you choose:
   - `🗑️ Delete completed plan`
   - `📁 Keep saved plan`
   - `➕ Additional work`
+- completed-plan action dialogs also require an explicit selection instead of allowing `Escape` to dismiss them, and show `User input...` while waiting
 - choosing `➕ Additional work` opens an editor so you can request more implementation while keeping the saved plan around
 - refining a plan opens an editor so you can provide specific feedback
 - refinement turns show a custom `✏️ Refining plan...` working message

@@ -1,13 +1,17 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { type ExtensionAPI, type ExtensionContext, withFileMutationQueue } from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, DynamicBorder, withFileMutationQueue } from "@mariozechner/pi-coding-agent";
+import { Container, matchesKey, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
 import {
 	buildAcceptedPlanExecutionPrompt,
 	buildAdditionalWorkPrompt,
 	buildPlanAutosavePath,
+	buildSavedPlanSelectorLabel,
 	extractPlanSection,
 	extractTextContent,
 	formatSavedPlanMarkdown,
+	listSavedPlans,
+	type SavedPlanRecord,
 } from "../src/plan-files";
 import {
 	getModeSwitchMessage,
@@ -31,8 +35,10 @@ type PlannerMessage = {
 };
 
 const ACCEPT_PLAN_CHOICE = "✅ Accept and switch to BUILD mode";
+const SAVE_PLAN_FOR_LATER_CHOICE = "💾 Save plan for later";
 const REFINE_PLAN_CHOICE = "✏️ Refine plan";
 const DISCARD_PLAN_CHOICE = "❌ Discard plan";
+const IMPLEMENT_SAVED_PLAN_CHOICE = "✅ Switch to BUILD mode and implement saved plan";
 const DELETE_COMPLETED_PLAN_CHOICE = "🗑️ Delete completed plan";
 const KEEP_SAVED_PLAN_CHOICE = "📁 Keep saved plan";
 const ADDITIONAL_WORK_CHOICE = "➕ Additional work";
@@ -107,7 +113,7 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		}
 	};
 
-	const saveAcceptedPlan = async (plan: string, ctx: ExtensionContext) => {
+	const savePlan = async (plan: string, ctx: ExtensionContext) => {
 		const savedAt = new Date();
 		const sessionId = ctx.sessionManager.getSessionId();
 		const sessionName = ctx.sessionManager.getSessionName();
@@ -153,18 +159,172 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		pi.sendUserMessage(message, { deliverAs: "followUp" });
 	};
 
+	const showRequiredActionSelector = async (title: string, choices: string[], ctx: ExtensionContext) => {
+		const items: SelectItem[] = choices.map((choice) => ({ value: choice, label: choice }));
+
+		ctx.ui.setWorkingMessage("User input...");
+		try {
+			return await ctx.ui.custom<string>((tui, theme, _kb, done) => {
+				const container = new Container();
+
+				container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+				container.addChild(new Text(theme.fg("accent", theme.bold(title)), 1, 0));
+
+				const selectList = new SelectList(items, Math.min(items.length, 10), {
+					selectedPrefix: (text) => theme.fg("accent", text),
+					selectedText: (text) => theme.fg("accent", text),
+					description: (text) => theme.fg("muted", text),
+					scrollInfo: (text) => theme.fg("dim", text),
+					noMatch: (text) => theme.fg("warning", text),
+				});
+				selectList.onSelect = (item) => done(item.value);
+				container.addChild(selectList);
+
+				container.addChild(new Text(theme.fg("dim", "↑↓ navigate • enter select"), 1, 0));
+				container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+
+				return {
+					render: (width: number) => container.render(width),
+					invalidate: () => container.invalidate(),
+					handleInput: (data: string) => {
+						selectList.handleInput(data);
+						tui.requestRender();
+					},
+				};
+			});
+		} finally {
+			ctx.ui.setWorkingMessage();
+		}
+	};
+
+	const showSavedPlansPopover = async (ctx: ExtensionContext) => {
+		const savedPlans = await listSavedPlans(ctx.cwd);
+		const savedPlanByPath = new Map(savedPlans.map((savedPlan) => [savedPlan.filePath, savedPlan]));
+		const items: SelectItem[] = savedPlans.map((savedPlan) => ({
+			value: savedPlan.filePath,
+			label: buildSavedPlanSelectorLabel(savedPlan),
+			description: buildPlanPreview(savedPlan.plan),
+		}));
+
+		ctx.ui.setWorkingMessage("User input...");
+		try {
+			return await ctx.ui.custom<SavedPlanRecord | undefined>(
+				(tui, theme, _kb, done) => {
+					const container = new Container();
+
+					container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+					container.addChild(new Text(theme.fg("accent", theme.bold("/plan list — saved plans")), 1, 0));
+
+					if (items.length === 0) {
+						container.addChild(new Text(theme.fg("muted", "No saved plans yet."), 1, 0));
+						container.addChild(new Text(theme.fg("dim", "enter close • esc cancel"), 1, 0));
+						container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+
+						return {
+							render: (width: number) => container.render(width),
+							invalidate: () => container.invalidate(),
+							handleInput: (data: string) => {
+								if (matchesKey(data, "return") || matchesKey(data, "escape")) {
+									done(undefined);
+									return;
+								}
+							},
+						};
+					}
+
+					const selectList = new SelectList(items, Math.min(items.length, 10), {
+						selectedPrefix: (text) => theme.fg("accent", text),
+						selectedText: (text) => theme.fg("accent", text),
+						description: (text) => theme.fg("muted", text),
+						scrollInfo: (text) => theme.fg("dim", text),
+						noMatch: (text) => theme.fg("warning", text),
+					});
+					selectList.onSelect = (item) => done(savedPlanByPath.get(String(item.value)));
+					selectList.onCancel = () => done(undefined);
+					container.addChild(selectList);
+
+					container.addChild(new Text(theme.fg("dim", "↑↓ navigate • enter select • esc cancel"), 1, 0));
+					container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+
+					return {
+						render: (width: number) => container.render(width),
+						invalidate: () => container.invalidate(),
+						handleInput: (data: string) => {
+							selectList.handleInput(data);
+							tui.requestRender();
+						},
+					};
+				},
+				{
+					overlay: true,
+					overlayOptions: {
+						anchor: "center",
+						width: "70%",
+						minWidth: 60,
+						maxHeight: "80%",
+						margin: 1,
+					},
+				},
+			);
+		} finally {
+			ctx.ui.setWorkingMessage();
+		}
+	};
+
+	const promptForSavedPlanNextStep = async (savedPlan: SavedPlanRecord, ctx: ExtensionContext) => {
+		if (!ctx.hasUI) return;
+
+		const choice = await showRequiredActionSelector("Saved plan — what next?", [
+			IMPLEMENT_SAVED_PLAN_CHOICE,
+			REFINE_PLAN_CHOICE,
+			KEEP_SAVED_PLAN_CHOICE,
+		], ctx);
+
+		if (choice === IMPLEMENT_SAVED_PLAN_CHOICE) {
+			activeAcceptedPlanPath = savedPlan.filePath;
+			activeAcceptedPlanText = savedPlan.plan;
+			cleanupReviewPending = true;
+
+			const implementationPrompt = buildAcceptedPlanExecutionPrompt({
+				plan: savedPlan.plan,
+				savedPlanPath: savedPlan.filePath,
+			});
+			setPlannerMode("build", ctx);
+			ctx.ui.notify(`Resuming saved plan ${savedPlan.filePath}. Starting implementation...`, "success");
+			sendBuildFollowUp(implementationPrompt, ctx);
+			return;
+		}
+
+		if (choice === REFINE_PLAN_CHOICE) {
+			const feedback = await ctx.ui.editor("How should the plan be refined?", "");
+			if (!feedback?.trim()) {
+				ctx.ui.notify("Refinement feedback is required.", "warning");
+				return;
+			}
+
+			isRefiningPlan = true;
+			pi.sendUserMessage(buildPlanRefinementPrompt(savedPlan.plan, feedback.trim()));
+			return;
+		}
+
+		if (choice === KEEP_SAVED_PLAN_CHOICE) {
+			ctx.ui.notify(`Kept saved plan ${savedPlan.filePath}`, "info");
+		}
+	};
+
 	const promptForPlanNextStep = async (plan: string, ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
 
-		const choice = await ctx.ui.select("Plan ready — what next?", [
+		const choice = await showRequiredActionSelector("Plan ready — what next?", [
 			ACCEPT_PLAN_CHOICE,
+			SAVE_PLAN_FOR_LATER_CHOICE,
 			REFINE_PLAN_CHOICE,
 			DISCARD_PLAN_CHOICE,
-		]);
+		], ctx);
 
 		if (choice === ACCEPT_PLAN_CHOICE) {
 			try {
-				const filePath = await saveAcceptedPlan(plan, ctx);
+				const filePath = await savePlan(plan, ctx);
 				activeAcceptedPlanPath = filePath;
 				activeAcceptedPlanText = plan;
 				cleanupReviewPending = true;
@@ -178,6 +338,16 @@ export default function plannerExtension(pi: ExtensionAPI) {
 				sendBuildFollowUp(implementationPrompt, ctx);
 			} catch (error) {
 				ctx.ui.notify(`Could not save the accepted plan: ${getErrorMessage(error)}`, "error");
+			}
+			return;
+		}
+
+		if (choice === SAVE_PLAN_FOR_LATER_CHOICE) {
+			try {
+				const filePath = await savePlan(plan, ctx);
+				ctx.ui.notify(`Plan saved for later at ${filePath}.`, "success");
+			} catch (error) {
+				ctx.ui.notify(`Could not save the plan for later: ${getErrorMessage(error)}`, "error");
 			}
 			return;
 		}
@@ -202,11 +372,11 @@ export default function plannerExtension(pi: ExtensionAPI) {
 	const promptForCompletedPlanNextStep = async (ctx: ExtensionContext) => {
 		if (!ctx.hasUI || !cleanupReviewPending || !activeAcceptedPlanPath) return;
 
-		const choice = await ctx.ui.select("Completed plan — what next?", [
+		const choice = await showRequiredActionSelector("Completed plan — what next?", [
 			DELETE_COMPLETED_PLAN_CHOICE,
 			KEEP_SAVED_PLAN_CHOICE,
 			ADDITIONAL_WORK_CHOICE,
-		]);
+		], ctx);
 
 		if (choice === DELETE_COMPLETED_PLAN_CHOICE) {
 			try {
@@ -345,8 +515,22 @@ export default function plannerExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("plan", {
-		description: "Switch to plan mode",
-		handler: async (_args, ctx) => {
+		description: "Switch to plan mode, or use /plan list to browse saved plans",
+		getArgumentCompletions: (prefix) => {
+			const options = ["list"];
+			const filtered = options.filter((option) => option.startsWith(prefix));
+			return filtered.length > 0 ? filtered.map((option) => ({ value: option, label: option })) : null;
+		},
+		handler: async (args, ctx) => {
+			if (args.trim() === "list") {
+				setPlannerMode("plan", ctx);
+				if (!ctx.hasUI) return;
+				const savedPlan = await showSavedPlansPopover(ctx);
+				if (!savedPlan) return;
+				await promptForSavedPlanNextStep(savedPlan, ctx);
+				return;
+			}
+
 			setPlannerMode("plan", ctx);
 		},
 	});
@@ -382,6 +566,19 @@ function buildPlanRefinementPrompt(plan: string, feedback: string): string {
 		"",
 		"Return an updated Plan: section with numbered steps.",
 	].join("\n");
+}
+
+function buildPlanPreview(plan: string): string {
+	const firstLine = plan
+		.split("\n")
+		.map((line) => line.trim())
+		.find((line) => line.length > 0);
+
+	if (!firstLine) {
+		return "Saved plan";
+	}
+
+	return firstLine.length > 96 ? `${firstLine.slice(0, 93)}...` : firstLine;
 }
 
 function getErrorMessage(error: unknown): string {
