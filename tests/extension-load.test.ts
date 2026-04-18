@@ -20,6 +20,7 @@ test("planner extension registers /plan and /build commands", async () => {
 	assert.match(source, /registerCommand\("plan"/);
 	assert.match(source, /registerCommand\("build"/);
 	assert.match(source, /args\.trim\(\) === "list"/);
+	assert.doesNotMatch(source, /getArgumentCompletions/);
 	assert.doesNotMatch(source, /registerCommand\("mode"/);
 });
 
@@ -105,10 +106,16 @@ test("planner extension supports browsing saved plans in a centered overlay popo
 	const source = await readFile(extensionPath, "utf8");
 
 	assert.match(source, /\/plan list/);
+	assert.match(source, /Saved Plans/);
 	assert.match(source, /ctx\.ui\.custom<[\s\S]*>\([\s\S]*overlay: true/s);
 	assert.match(source, /anchor: "center"/);
 	assert.match(source, /listSavedPlans/);
 	assert.match(source, /buildSavedPlanSelectorLabel/);
+	assert.match(source, /visibleWidth/);
+	assert.match(source, /┌/);
+	assert.match(source, /│/);
+	assert.match(source, /└/);
+	assert.doesNotMatch(source, /new Box\(1, 1, \(text\) => theme\.bg\("customMessageBg", text\)\)/);
 });
 
 

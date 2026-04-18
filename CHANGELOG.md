@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-04-18
+
+### Changed
+- `/plan list` now opens directly without an argument-completion selection step
+- the saved-plans popover title is now `Saved Plans`
+
+### Fixed
+- the `/plan list` popover now renders with a clearer accent-colored border so it stands out from the background
+
 ## [0.1.7] - 2026-04-18
 
 ### Added

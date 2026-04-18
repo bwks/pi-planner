@@ -1,7 +1,7 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { type ExtensionAPI, type ExtensionContext, DynamicBorder, withFileMutationQueue } from "@mariozechner/pi-coding-agent";
-import { Container, matchesKey, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
+import { Container, matchesKey, type SelectItem, SelectList, Text, visibleWidth } from "@mariozechner/pi-tui";
 import {
 	buildAcceptedPlanExecutionPrompt,
 	buildAdditionalWorkPrompt,
@@ -211,17 +211,16 @@ export default function plannerExtension(pi: ExtensionAPI) {
 			return await ctx.ui.custom<SavedPlanRecord | undefined>(
 				(tui, theme, _kb, done) => {
 					const container = new Container();
+					const border = (text: string) => theme.fg("accent", text);
 
-					container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-					container.addChild(new Text(theme.fg("accent", theme.bold("/plan list — saved plans")), 1, 0));
+					container.addChild(new Text(theme.fg("accent", theme.bold("Saved Plans")), 1, 0));
 
 					if (items.length === 0) {
 						container.addChild(new Text(theme.fg("muted", "No saved plans yet."), 1, 0));
 						container.addChild(new Text(theme.fg("dim", "enter close • esc cancel"), 1, 0));
-						container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 
 						return {
-							render: (width: number) => container.render(width),
+							render: (width: number) => renderBorderedPanel(container.render(Math.max(1, width - 2)), width, border),
 							invalidate: () => container.invalidate(),
 							handleInput: (data: string) => {
 								if (matchesKey(data, "return") || matchesKey(data, "escape")) {
@@ -244,10 +243,9 @@ export default function plannerExtension(pi: ExtensionAPI) {
 					container.addChild(selectList);
 
 					container.addChild(new Text(theme.fg("dim", "↑↓ navigate • enter select • esc cancel"), 1, 0));
-					container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 
 					return {
-						render: (width: number) => container.render(width),
+						render: (width: number) => renderBorderedPanel(container.render(Math.max(1, width - 2)), width, border),
 						invalidate: () => container.invalidate(),
 						handleInput: (data: string) => {
 							selectList.handleInput(data);
@@ -516,11 +514,6 @@ export default function plannerExtension(pi: ExtensionAPI) {
 
 	pi.registerCommand("plan", {
 		description: "Switch to plan mode, or use /plan list to browse saved plans",
-		getArgumentCompletions: (prefix) => {
-			const options = ["list"];
-			const filtered = options.filter((option) => option.startsWith(prefix));
-			return filtered.length > 0 ? filtered.map((option) => ({ value: option, label: option })) : null;
-		},
 		handler: async (args, ctx) => {
 			if (args.trim() === "list") {
 				setPlannerMode("plan", ctx);
@@ -579,6 +572,17 @@ function buildPlanPreview(plan: string): string {
 	}
 
 	return firstLine.length > 96 ? `${firstLine.slice(0, 93)}...` : firstLine;
+}
+
+function renderBorderedPanel(lines: string[], width: number, border: (text: string) => string): string[] {
+	const innerWidth = Math.max(1, width - 2);
+	const top = border(`┌${"─".repeat(innerWidth)}┐`);
+	const body = lines.map((line) => {
+		const padding = Math.max(0, innerWidth - visibleWidth(line));
+		return `${border("│")}${line}${" ".repeat(padding)}${border("│")}`;
+	});
+	const bottom = border(`└${"─".repeat(innerWidth)}┘`);
+	return [top, ...body, bottom];
 }
 
 function getErrorMessage(error: unknown): string {
