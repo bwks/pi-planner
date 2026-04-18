@@ -4,6 +4,7 @@ A [pi](https://github.com/mariozechner/pi-coding-agent) package that adds a plan
 
 ## Features
 
+- pi starts in `PLAN` mode by default
 - `/plan` switches pi into planning mode
 - `/build` switches pi back into implementation mode
 - in `PLAN` mode, mutating system actions are blocked
@@ -44,6 +45,8 @@ After installing, reload pi if needed:
 ```
 
 ## Usage
+
+pi starts in `PLAN` mode by default.
 
 Switch modes with:
 

@@ -13,7 +13,7 @@ type PlannerStateEntry = {
 };
 
 export default function plannerExtension(pi: ExtensionAPI) {
-	let plannerMode: PlannerMode = "build";
+	let plannerMode: PlannerMode = "plan";
 	let activeToolsBeforePlanMode: string[] | undefined;
 
 	pi.registerFlag("plan", {
@@ -69,7 +69,7 @@ export default function plannerExtension(pi: ExtensionAPI) {
 	};
 
 	const restorePlannerMode = (ctx: ExtensionContext) => {
-		plannerMode = pi.getFlag("plan") === true ? "plan" : "build";
+		plannerMode = "plan";
 		activeToolsBeforePlanMode = undefined;
 
 		for (const entry of ctx.sessionManager.getBranch()) {

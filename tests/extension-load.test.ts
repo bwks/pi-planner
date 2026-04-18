@@ -21,3 +21,11 @@ test("planner extension registers /plan and /build commands", async () => {
 	assert.match(source, /registerCommand\("build"/);
 	assert.doesNotMatch(source, /registerCommand\("mode"/);
 });
+
+test("planner extension defaults to plan mode", async () => {
+	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
+	const source = await readFile(extensionPath, "utf8");
+
+	assert.match(source, /let plannerMode: PlannerMode = "plan"/);
+	assert.match(source, /const restorePlannerMode = \(ctx: ExtensionContext\) => \{\s*plannerMode = "plan";/s);
+});
