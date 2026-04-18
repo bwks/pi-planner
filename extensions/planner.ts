@@ -1,4 +1,7 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { type ExtensionAPI, type ExtensionContext, withFileMutationQueue } from "@mariozechner/pi-coding-agent";
+import { buildPlanAutosavePath, extractPlanSection, extractTextContent, formatSavedPlanMarkdown } from "../src/plan-files";
 import {
 	getModeSwitchMessage,
 	PLAN_MODE_TOOL_NAMES,
@@ -11,6 +14,14 @@ type PlannerStateEntry = {
 	mode?: PlannerMode;
 	activeToolsBeforePlanMode?: string[];
 };
+
+type PlannerMessage = {
+	role?: string;
+	content?: unknown;
+};
+
+const ACCEPT_PLAN_CHOICE = "Accept and switch to BUILD mode";
+const REFINE_PLAN_CHOICE = "Refine plan";
 
 export default function plannerExtension(pi: ExtensionAPI) {
 	let plannerMode: PlannerMode = "plan";
@@ -68,6 +79,58 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		}
 	};
 
+	const saveAcceptedPlan = async (plan: string, ctx: ExtensionContext) => {
+		const savedAt = new Date();
+		const sessionId = ctx.sessionManager.getSessionId();
+		const sessionName = ctx.sessionManager.getSessionName();
+		const filePath = buildPlanAutosavePath({
+			cwd: ctx.cwd,
+			savedAt,
+			sessionId,
+			sessionName,
+		});
+		const markdown = formatSavedPlanMarkdown({
+			plan,
+			savedAt,
+			sessionId,
+			sessionName,
+		});
+
+		await withFileMutationQueue(filePath, async () => {
+			await mkdir(dirname(filePath), { recursive: true });
+			await writeFile(filePath, markdown, "utf8");
+		});
+
+		return filePath;
+	};
+
+	const promptForPlanNextStep = async (plan: string, ctx: ExtensionContext) => {
+		if (!ctx.hasUI) return;
+
+		const choice = await ctx.ui.select("Plan ready — what next?", [ACCEPT_PLAN_CHOICE, REFINE_PLAN_CHOICE]);
+
+		if (choice === ACCEPT_PLAN_CHOICE) {
+			try {
+				const filePath = await saveAcceptedPlan(plan, ctx);
+				setPlannerMode("build", ctx);
+				ctx.ui.notify(`Accepted plan saved to ${filePath}`, "success");
+			} catch (error) {
+				ctx.ui.notify(`Could not save the accepted plan: ${getErrorMessage(error)}`, "error");
+			}
+			return;
+		}
+
+		if (choice === REFINE_PLAN_CHOICE) {
+			const feedback = await ctx.ui.editor("How should the plan be refined?", "");
+			if (!feedback?.trim()) {
+				ctx.ui.notify("Refinement feedback is required.", "warning");
+				return;
+			}
+
+			pi.sendUserMessage(buildPlanRefinementPrompt(plan, feedback.trim()));
+		}
+	};
+
 	const restorePlannerMode = (ctx: ExtensionContext) => {
 		plannerMode = "plan";
 		activeToolsBeforePlanMode = undefined;
@@ -103,7 +166,7 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		return {
 			systemPrompt:
 				event.systemPrompt +
-				"\n\nPlanner mode guidance:\n- You are currently in PLAN mode.\n- Focus on analysis, exploration, and producing a plan.\n- Do not attempt to modify files, run shell commands, or use non-read-only tools.\n- If the user wants implementation work, tell them to switch back to BUILD mode with /build.\n- The only allowed tools in PLAN mode are: " +
+				"\n\nPlanner mode guidance:\n- You are currently in PLAN mode.\n- Focus on analysis, exploration, and producing a plan.\n- Do not attempt to modify files, run shell commands, or use non-read-only tools.\n- If the user wants implementation work, tell them to switch back to BUILD mode with /build.\n- When you propose work, format it as a numbered plan under a `Plan:` heading.\n- The only allowed tools in PLAN mode are: " +
 				PLAN_MODE_TOOL_NAMES.join(", ") +
 				".",
 		};
@@ -131,6 +194,15 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		};
 	});
 
+	pi.on("agent_end", async (event, ctx) => {
+		if (plannerMode !== "plan" || !ctx.hasUI) return;
+
+		const plan = getLatestPlanFromMessages(event.messages as PlannerMessage[]);
+		if (!plan) return;
+
+		await promptForPlanNextStep(plan, ctx);
+	});
+
 	pi.registerCommand("plan", {
 		description: "Switch to plan mode",
 		handler: async (_args, ctx) => {
@@ -144,4 +216,37 @@ export default function plannerExtension(pi: ExtensionAPI) {
 			setPlannerMode("build", ctx);
 		},
 	});
+}
+
+function getLatestPlanFromMessages(messages: PlannerMessage[]): string | undefined {
+	for (let i = messages.length - 1; i >= 0; i -= 1) {
+		const message = messages[i];
+		if (message.role !== "assistant") continue;
+		const plan = extractPlanSection(extractTextContent(message.content));
+		if (plan) return plan;
+	}
+
+	return undefined;
+}
+
+function buildPlanRefinementPrompt(plan: string, feedback: string): string {
+	return [
+		"Please refine the current plan using this feedback:",
+		"",
+		feedback,
+		"",
+		"Current plan:",
+		"Plan:",
+		plan,
+		"",
+		"Return an updated Plan: section with numbered steps.",
+	].join("\n");
+}
+
+function getErrorMessage(error: unknown): string {
+	if (error instanceof Error && error.message) {
+		return error.message;
+	}
+
+	return "Unknown error";
 }

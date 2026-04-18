@@ -10,6 +10,7 @@ A [pi](https://github.com/mariozechner/pi-coding-agent) package that adds a plan
 - in `PLAN` mode, mutating system actions are blocked
 - the active toolset is reduced to read-only tools
 - current mode is shown in the footer status line
+- accepted plans are autosaved before switching to `BUILD`
 - planner mode is restored from session history
 
 ## Install
@@ -60,6 +61,11 @@ When `PLAN` mode is active:
 - `write`, `edit`, `bash`, and other non-read-only tools are blocked
 - user `!` and `!!` shell commands are blocked
 - pi is instructed to analyze, inspect, and plan instead of making changes
+- when pi returns a structured `Plan:` section, you can choose:
+  - `Accept and switch to BUILD mode`
+  - `Refine plan`
+- accepted plans are saved to `.pi/plans/` before switching to `BUILD`
+- refining a plan opens an editor so you can provide specific feedback
 
 Read-only tools allowed in `PLAN` mode:
 
