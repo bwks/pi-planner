@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-04-18
+
 ### Changed
 - planner mode now starts in `PLAN` by default for new sessions without stored planner state
 - README now documents installing the package directly from GitHub with `pi install git:github.com/bwks/pi-planner`
