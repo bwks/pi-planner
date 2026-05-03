@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+	ASK_CLARIFYING_QUESTIONS_TOOL_NAME,
 	PLAN_MODE_TOOL_NAMES,
 	getModeSwitchMessage,
 	getPlannerStatusText,
@@ -9,12 +10,14 @@ import {
 	shouldAllowToolInPlanMode,
 } from "../src/planner-mode";
 
-test("shouldAllowToolInPlanMode only allows the read-only planner toolset", () => {
-	assert.deepEqual(PLAN_MODE_TOOL_NAMES, ["read", "grep", "find", "ls"]);
+test("shouldAllowToolInPlanMode allows read-only tools and the planner question tool", () => {
+	assert.deepEqual(PLAN_MODE_TOOL_NAMES, ["read", "grep", "find", "ls", "ask_clarifying_questions"]);
+	assert.equal(ASK_CLARIFYING_QUESTIONS_TOOL_NAME, "ask_clarifying_questions");
 	assert.equal(shouldAllowToolInPlanMode("read"), true);
 	assert.equal(shouldAllowToolInPlanMode("grep"), true);
 	assert.equal(shouldAllowToolInPlanMode("find"), true);
 	assert.equal(shouldAllowToolInPlanMode("ls"), true);
+	assert.equal(shouldAllowToolInPlanMode("ask_clarifying_questions"), true);
 	assert.equal(shouldAllowToolInPlanMode("bash"), false);
 	assert.equal(shouldAllowToolInPlanMode("write"), false);
 	assert.equal(shouldAllowToolInPlanMode("edit"), false);

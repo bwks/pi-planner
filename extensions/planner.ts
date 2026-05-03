@@ -1,7 +1,8 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { type ExtensionAPI, type ExtensionContext, DynamicBorder, withFileMutationQueue } from "@mariozechner/pi-coding-agent";
-import { Container, matchesKey, type SelectItem, SelectList, Text, visibleWidth } from "@mariozechner/pi-tui";
+import { Editor, type EditorTheme, Container, Key, matchesKey, type SelectItem, SelectList, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
+import { Type } from "@sinclair/typebox";
 import {
 	buildAcceptedPlanExecutionPrompt,
 	buildAdditionalWorkPrompt,
@@ -14,6 +15,7 @@ import {
 	type SavedPlanRecord,
 } from "../src/plan-files";
 import {
+	ASK_CLARIFYING_QUESTIONS_TOOL_NAME,
 	getModeSwitchMessage,
 	PLAN_MODE_TOOL_NAMES,
 	renderPlannerStatus,
@@ -34,11 +36,55 @@ type PlannerMessage = {
 	content?: unknown;
 };
 
+type ClarifyingQuestionInput = {
+	id?: string;
+	label?: string;
+	question: string;
+	placeholder?: string;
+};
+
+type ClarifyingQuestion = {
+	id: string;
+	label: string;
+	question: string;
+	placeholder?: string;
+};
+
+type ClarifyingAnswer = {
+	id: string;
+	label: string;
+	question: string;
+	answer: string;
+};
+
+type ClarifyingQuestionsResult = {
+	questions: ClarifyingQuestion[];
+	answers: ClarifyingAnswer[];
+	cancelled: boolean;
+};
+
+const ClarifyingQuestionSchema = Type.Object({
+	id: Type.Optional(Type.String({ description: "Stable answer id for this question" })),
+	label: Type.Optional(Type.String({ description: "Short tab label for this question" })),
+	question: Type.String({ description: "Question to show the user" }),
+	placeholder: Type.Optional(Type.String({ description: "Optional placeholder answer text" })),
+});
+
+const ClarifyingQuestionsToolParams = Type.Object({
+	questions: Type.Array(ClarifyingQuestionSchema, {
+		description: "Clarifying questions to ask before producing the final plan",
+		minItems: 1,
+		maxItems: 8,
+	}),
+	context: Type.Optional(Type.String({ description: "Optional context shown above the questions" })),
+});
+
 const ACCEPT_PLAN_CHOICE = "✅ Accept and switch to BUILD mode";
 const SAVE_PLAN_FOR_LATER_CHOICE = "💾 Save plan for later";
 const REFINE_PLAN_CHOICE = "✏️ Refine plan";
 const DISCARD_PLAN_CHOICE = "❌ Discard plan";
 const IMPLEMENT_SAVED_PLAN_CHOICE = "✅ Switch to BUILD mode and implement saved plan";
+const DELETE_SAVED_PLAN_CHOICE = "🗑️ Delete saved plan";
 const DELETE_COMPLETED_PLAN_CHOICE = "🗑️ Delete completed plan";
 const KEEP_SAVED_PLAN_CHOICE = "📁 Keep saved plan";
 const ADDITIONAL_WORK_CHOICE = "➕ Additional work";
@@ -73,7 +119,13 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		}
 
 		if (activeToolsBeforePlanMode) {
-			pi.setActiveTools(activeToolsBeforePlanMode);
+			pi.setActiveTools(activeToolsBeforePlanMode.filter((name) => name !== ASK_CLARIFYING_QUESTIONS_TOOL_NAME));
+			return;
+		}
+
+		const activeTools = pi.getActiveTools();
+		if (activeTools.includes(ASK_CLARIFYING_QUESTIONS_TOOL_NAME)) {
+			pi.setActiveTools(activeTools.filter((name) => name !== ASK_CLARIFYING_QUESTIONS_TOOL_NAME));
 		}
 	};
 
@@ -269,12 +321,242 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		}
 	};
 
+	const showClarifyingQuestionsBox = async (
+		questions: ClarifyingQuestion[],
+		context: string | undefined,
+		ctx: ExtensionContext,
+	): Promise<ClarifyingQuestionsResult> => {
+		ctx.ui.setWorkingMessage("User input...");
+		try {
+			return await ctx.ui.custom<ClarifyingQuestionsResult>((tui, theme, _kb, done) => {
+				let currentTab = 0;
+				let cachedLines: string[] | undefined;
+				const answers = new Map<string, ClarifyingAnswer>();
+				const border = (text: string) => theme.fg("borderAccent", text);
+
+				const editorTheme: EditorTheme = {
+					borderColor: (text: string) => theme.fg("accent", text),
+					selectList: {
+						selectedPrefix: (text: string) => theme.fg("accent", text),
+						selectedText: (text: string) => theme.fg("accent", text),
+						description: (text: string) => theme.fg("muted", text),
+						scrollInfo: (text: string) => theme.fg("dim", text),
+						noMatch: (text: string) => theme.fg("warning", text),
+					},
+				};
+				const editor = new Editor(tui, editorTheme, { paddingX: 0 });
+
+				const refresh = () => {
+					cachedLines = undefined;
+					tui.requestRender();
+				};
+
+				const currentQuestion = () => questions[currentTab];
+
+				const saveCurrentAnswer = (answerText = editor.getExpandedText()) => {
+					const question = currentQuestion();
+					if (!question) return;
+					answers.set(question.id, {
+						id: question.id,
+						label: question.label,
+						question: question.question,
+						answer: answerText.trim(),
+					});
+				};
+
+				const loadCurrentAnswer = () => {
+					const question = currentQuestion();
+					if (!question) return;
+					editor.setText(answers.get(question.id)?.answer ?? "");
+				};
+
+				const allAnswered = () => questions.every((question) => answers.has(question.id));
+
+				const submit = (cancelled: boolean) => {
+					if (currentTab < questions.length) {
+						saveCurrentAnswer();
+					}
+					done({ questions, answers: Array.from(answers.values()), cancelled });
+				};
+
+				const setCurrentTab = (nextTab: number, options: { saveCurrent?: boolean } = {}) => {
+					if (options.saveCurrent !== false && currentTab < questions.length) {
+						saveCurrentAnswer();
+					}
+					currentTab = (nextTab + questions.length + 1) % (questions.length + 1);
+					if (currentTab < questions.length) {
+						loadCurrentAnswer();
+					}
+					refresh();
+				};
+
+				editor.onChange = (value) => {
+					saveCurrentAnswer(value);
+				};
+
+				editor.onSubmit = (value) => {
+					saveCurrentAnswer(value);
+					setCurrentTab(Math.min(currentTab + 1, questions.length), { saveCurrent: false });
+				};
+
+				const renderTabs = (width: number) => {
+					const tabs = questions.map((question, index) => {
+						const answered = answers.has(question.id);
+						const label = `${answered ? "■" : "□"} ${question.label}`;
+						const text = ` ${label} `;
+						return index === currentTab
+							? theme.bg("selectedBg", theme.fg("text", text))
+							: theme.fg(answered ? "success" : "muted", text);
+					});
+					const submitText = " ✓ Submit ";
+					tabs.push(
+						currentTab === questions.length
+							? theme.bg("selectedBg", theme.fg("text", submitText))
+							: theme.fg(allAnswered() ? "success" : "dim", submitText),
+					);
+					return truncateToWidth(` ${tabs.join(" ")}`, width);
+				};
+
+				const render = (width: number) => {
+					if (cachedLines) return cachedLines;
+					const innerWidth = Math.max(1, width - 2);
+					const lines: string[] = [];
+					const add = (line = "") => lines.push(truncateToWidth(line, innerWidth));
+
+					add(theme.fg("accent", theme.bold("Clarifying Questions")));
+					if (context?.trim()) {
+						for (const line of wrapTextWithAnsi(theme.fg("muted", context.trim()), innerWidth)) {
+							add(line);
+						}
+					}
+					add(renderTabs(innerWidth));
+					add("");
+
+					if (currentTab === questions.length) {
+						add(theme.fg("accent", theme.bold("Submit answers")));
+						add("");
+						for (const question of questions) {
+							const answer = answers.get(question.id)?.answer.trim();
+							add(`${theme.fg("muted", `${question.label}:`)} ${answer ? theme.fg("text", answer) : theme.fg("warning", "No answer")}`);
+						}
+						add("");
+						add(allAnswered() ? theme.fg("success", "Enter submit") : theme.fg("warning", "Some questions have no saved answer"));
+					} else {
+						const question = currentQuestion();
+						if (question) {
+							for (const line of wrapTextWithAnsi(theme.fg("text", question.question), innerWidth)) {
+								add(line);
+							}
+							if (question.placeholder && !editor.getText().trim()) {
+								add(theme.fg("dim", question.placeholder));
+							}
+							add("");
+							for (const line of editor.render(innerWidth)) {
+								add(line);
+							}
+						}
+					}
+
+					add("");
+					add(theme.fg("dim", "Tab/←→ navigate • Enter submit • Esc cancel"));
+					cachedLines = renderBorderedPanel(lines, width, border);
+					return cachedLines;
+				};
+
+				return {
+					get focused() {
+						return editor.focused;
+					},
+					set focused(value: boolean) {
+						editor.focused = value;
+					},
+					render,
+					invalidate: () => {
+						cachedLines = undefined;
+						editor.invalidate();
+					},
+					handleInput: (data: string) => {
+						if (matchesKey(data, Key.tab) || matchesKey(data, Key.right)) {
+							setCurrentTab(currentTab + 1);
+							return;
+						}
+						if (matchesKey(data, Key.shift("tab")) || matchesKey(data, Key.left)) {
+							setCurrentTab(currentTab - 1);
+							return;
+						}
+						if (matchesKey(data, Key.escape)) {
+							submit(true);
+							return;
+						}
+						if (currentTab === questions.length) {
+							if (matchesKey(data, Key.enter)) {
+								submit(false);
+							}
+							return;
+						}
+
+						editor.handleInput(data);
+						refresh();
+					},
+				};
+			});
+		} finally {
+			ctx.ui.setWorkingMessage();
+		}
+	};
+
+	pi.registerTool({
+		name: ASK_CLARIFYING_QUESTIONS_TOOL_NAME,
+		label: "Clarifying Questions",
+		description: "Ask clarifying questions about the plan in a tabbed box before producing the final plan.",
+		promptSnippet: "Ask clarifying questions about the plan in a tabbed box",
+		promptGuidelines: [
+			"Use ask_clarifying_questions before producing a final plan when requirements, scope, risks, or user preferences are ambiguous.",
+		],
+		parameters: ClarifyingQuestionsToolParams,
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const questions = normalizeClarifyingQuestions(params.questions);
+			if (plannerMode !== "plan") {
+				return buildClarifyingQuestionsToolResult(questions, [], true, "Clarifying questions are only available in PLAN mode.");
+			}
+			if (!ctx.hasUI) {
+				return buildClarifyingQuestionsToolResult(questions, [], true, "Clarifying questions require an interactive UI.");
+			}
+			if (questions.length === 0) {
+				return buildClarifyingQuestionsToolResult(questions, [], true, "No clarifying questions were provided.");
+			}
+
+			const result = await showClarifyingQuestionsBox(questions, params.context, ctx);
+			if (result.cancelled) {
+				return buildClarifyingQuestionsToolResult(result.questions, result.answers, true, "User cancelled the clarifying questions.");
+			}
+
+			return buildClarifyingQuestionsToolResult(result.questions, result.answers, false, formatClarifyingAnswersForModel(result.answers));
+		},
+		renderCall(args, theme) {
+			const count = Array.isArray(args.questions) ? args.questions.length : 0;
+			return new Text(theme.fg("toolTitle", theme.bold("ask_clarifying_questions ")) + theme.fg("muted", `${count} question${count === 1 ? "" : "s"}`), 0, 0);
+		},
+		renderResult(result, _options, theme) {
+			const details = result.details as ClarifyingQuestionsResult | undefined;
+			if (!details) {
+				return new Text(extractTextContent(result.content), 0, 0);
+			}
+			if (details.cancelled) {
+				return new Text(theme.fg("warning", "Clarifying questions cancelled"), 0, 0);
+			}
+			const lines = details.answers.map((answer) => `${theme.fg("success", "✓")} ${theme.fg("accent", answer.label)}: ${answer.answer || theme.fg("muted", "(no answer)")}`);
+			return new Text(lines.join("\n"), 0, 0);
+		},
+	});
+
 	const promptForSavedPlanNextStep = async (savedPlan: SavedPlanRecord, ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
 
 		const choice = await showRequiredActionSelector("Saved plan — what next?", [
 			IMPLEMENT_SAVED_PLAN_CHOICE,
 			REFINE_PLAN_CHOICE,
+			DELETE_SAVED_PLAN_CHOICE,
 			KEEP_SAVED_PLAN_CHOICE,
 		], ctx);
 
@@ -302,6 +584,16 @@ export default function plannerExtension(pi: ExtensionAPI) {
 
 			isRefiningPlan = true;
 			pi.sendUserMessage(buildPlanRefinementPrompt(savedPlan.plan, feedback.trim()));
+			return;
+		}
+
+		if (choice === DELETE_SAVED_PLAN_CHOICE) {
+			try {
+				await deleteSavedPlan(savedPlan.filePath);
+				ctx.ui.notify(`Deleted saved plan ${savedPlan.filePath}`, "success");
+			} catch (error) {
+				ctx.ui.notify(`Could not delete saved plan: ${getErrorMessage(error)}`, "error");
+			}
 			return;
 		}
 
@@ -465,7 +757,7 @@ export default function plannerExtension(pi: ExtensionAPI) {
 		return {
 			systemPrompt:
 				event.systemPrompt +
-				"\n\nPlanner mode guidance:\n- You are currently in PLAN mode.\n- Focus on analysis, exploration, and producing a plan.\n- Do not attempt to modify files, run shell commands, or use non-read-only tools.\n- If the user wants implementation work, tell them to switch back to BUILD mode with /build.\n- When you propose work, format it as a numbered plan under a `Plan:` heading.\n- The only allowed tools in PLAN mode are: " +
+				"\n\nPlanner mode guidance:\n- You are currently in PLAN mode.\n- Focus on analysis, exploration, and producing a plan.\n- Do not attempt to modify files, run shell commands, or use non-read-only tools.\n- If requirements are ambiguous, use ask_clarifying_questions to ask clarifying questions before producing a final plan.\n- If the user wants implementation work, tell them to switch back to BUILD mode with /build.\n- When you propose work, format it as a numbered plan under a `Plan:` heading.\n- The only allowed tools in PLAN mode are: " +
 				PLAN_MODE_TOOL_NAMES.join(", ") +
 				".",
 		};
@@ -572,6 +864,60 @@ function buildPlanPreview(plan: string): string {
 	}
 
 	return firstLine.length > 96 ? `${firstLine.slice(0, 93)}...` : firstLine;
+}
+
+function normalizeClarifyingQuestions(questions: ClarifyingQuestionInput[]): ClarifyingQuestion[] {
+	const usedIds = new Set<string>();
+	return questions
+		.map((question, index) => {
+			const fallbackId = `q${index + 1}`;
+			let id = slugifyQuestionId(question.id || question.label || fallbackId) || fallbackId;
+			if (usedIds.has(id)) {
+				id = `${id}-${index + 1}`;
+			}
+			usedIds.add(id);
+
+			return {
+				id,
+				label: question.label?.trim() || `Q${index + 1}`,
+				question: question.question.trim(),
+				placeholder: question.placeholder?.trim(),
+			};
+		})
+		.filter((question) => question.question.length > 0);
+}
+
+function formatClarifyingAnswersForModel(answers: ClarifyingAnswer[]): string {
+	if (answers.length === 0) {
+		return "No clarifying answers were provided.";
+	}
+
+	return [
+		"Clarifying answers:",
+		...answers.map((answer, index) => `${index + 1}. ${answer.question}\nAnswer: ${answer.answer || "(no answer)"}`),
+	].join("\n");
+}
+
+function buildClarifyingQuestionsToolResult(
+	questions: ClarifyingQuestion[],
+	answers: ClarifyingAnswer[],
+	cancelled: boolean,
+	message: string,
+) {
+	return {
+		content: [{ type: "text", text: message }],
+		details: { questions, answers, cancelled },
+	};
+}
+
+function slugifyQuestionId(value: string): string {
+	return value
+		.normalize("NFKD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 40);
 }
 
 function renderBorderedPanel(lines: string[], width: number, border: (text: string) => string): string[] {

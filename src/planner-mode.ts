@@ -1,6 +1,8 @@
 export type PlannerMode = "build" | "plan";
 
-export const PLAN_MODE_TOOL_NAMES = ["read", "grep", "find", "ls"] as const;
+export const ASK_CLARIFYING_QUESTIONS_TOOL_NAME = "ask_clarifying_questions";
+
+export const PLAN_MODE_TOOL_NAMES = ["read", "grep", "find", "ls", ASK_CLARIFYING_QUESTIONS_TOOL_NAME] as const;
 
 const PLAN_MODE_TOOLS = new Set<string>(PLAN_MODE_TOOL_NAMES);
 

@@ -101,6 +101,51 @@ test("planner extension customizes the working message while refining a plan", a
 });
 
 
+test("planner extension registers an LLM clarifying questions tool", async () => {
+	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
+	const source = await readFile(extensionPath, "utf8");
+
+	assert.match(source, /registerTool\(/);
+	assert.match(source, /ASK_CLARIFYING_QUESTIONS_TOOL_NAME/);
+	assert.match(source, /Ask clarifying questions about the plan/);
+	assert.match(source, /showClarifyingQuestionsBox/);
+	assert.match(source, /Clarifying Questions/);
+});
+
+
+test("planner extension renders clarifying questions in a tabbed box", async () => {
+	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
+	const source = await readFile(extensionPath, "utf8");
+
+	assert.match(source, /Tab\/←→ navigate/);
+	assert.match(source, /answers = new Map/);
+	assert.match(source, /currentTab/);
+	assert.match(source, /Key\.tab/);
+	assert.match(source, /Key\.shift\("tab"\)/);
+	assert.match(source, /renderBorderedPanel/);
+	assert.match(source, /Submit/);
+});
+
+
+test("planner extension preserves typed clarifying answers when the editor submits", async () => {
+	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
+	const source = await readFile(extensionPath, "utf8");
+
+	assert.match(source, /const saveCurrentAnswer = \(answerText = editor\.getExpandedText\(\)\)/);
+	assert.match(source, /editor\.onChange = \(value\) => \{\s*saveCurrentAnswer\(value\);\s*\}/s);
+	assert.match(source, /editor\.onSubmit = \(value\) => \{\s*saveCurrentAnswer\(value\);\s*setCurrentTab\(Math\.min\(currentTab \+ 1, questions\.length\), \{ saveCurrent: false \}\);\s*\}/s);
+});
+
+
+test("planner mode guidance tells the LLM to ask clarifying questions before final plans", async () => {
+	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
+	const source = await readFile(extensionPath, "utf8");
+
+	assert.match(source, /ask clarifying questions/i);
+	assert.match(source, /before producing a final plan/i);
+});
+
+
 test("planner extension supports browsing saved plans in a centered overlay popover", async () => {
 	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
 	const source = await readFile(extensionPath, "utf8");
@@ -117,6 +162,27 @@ test("planner extension supports browsing saved plans in a centered overlay popo
 	assert.match(source, /│/);
 	assert.match(source, /└/);
 	assert.doesNotMatch(source, /new Box\(1, 1, \(text\) => theme\.bg\("customMessageBg", text\)\)/);
+});
+
+
+test("planner extension can delete an arbitrary saved plan from the saved-plan menu", async () => {
+	const extensionPath = path.resolve(process.cwd(), "extensions/planner.ts");
+	const source = await readFile(extensionPath, "utf8");
+
+	assert.match(source, /🗑️ Delete saved plan/);
+	assert.match(source, /DELETE_SAVED_PLAN_CHOICE/);
+	assert.match(
+		source,
+		/promptForSavedPlanNextStep[\s\S]*DELETE_SAVED_PLAN_CHOICE[\s\S]*if \(choice === DELETE_SAVED_PLAN_CHOICE\) \{[\s\S]*await deleteSavedPlan\(savedPlan\.filePath\);[\s\S]*Deleted saved plan/s,
+	);
+
+	const deleteStart = source.indexOf("if (choice === DELETE_SAVED_PLAN_CHOICE) {");
+	const nextBranchStart = source.indexOf("if (choice ===", deleteStart + 1);
+	const deleteBlock = source.slice(deleteStart, nextBranchStart === -1 ? undefined : nextBranchStart);
+
+	assert.doesNotMatch(deleteBlock, /setPlannerMode\("build", ctx\)/);
+	assert.doesNotMatch(deleteBlock, /sendBuildFollowUp\(/);
+	assert.doesNotMatch(deleteBlock, /activeAcceptedPlanPath =/);
 });
 
 

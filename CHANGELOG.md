@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-05-03
+
+### Added
+- `ask_clarifying_questions` tool for collecting planner clarifications in a tabbed UI before producing a final plan
+- `🗑️ Delete saved plan` action for saved plans opened from `/plan list`
+
+### Changed
+- `PLAN` mode now exposes the clarifying-questions tool while keeping it disabled in `BUILD` mode
+
 ## [0.1.9] - 2026-04-18
 
 ### Fixed
